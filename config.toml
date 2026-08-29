@@ -1,0 +1,69 @@
+[station]
+name = "Finchley Road"
+# Stop ID for the arrivals feed. Find IDs for any station with:
+#     python departures.py --search "station name"
+id = "940GZZLUFYR"
+# Filter the board. Both take a list; an empty list means "everything".
+#     lines:     TfL line IDs, e.g. ["dlr"] or ["circle", "hammersmith-city"]
+#     platforms: case-insensitive substrings of the platform name,
+#                e.g. ["southbound"] or ["platform 4", "platform 5"]
+lines = []
+platforms = ["southbound"]
+# Show a line-name column: "auto" (only with mixed lines), "always", or "never".
+show_line_names = "auto"
+# The font has one usable size, so more rows tighten the line spacing.
+max_rows = 4
+
+
+[status]
+# Line IDs to show on the status display, in the order they should appear.
+# Empty list means every line, in the usual TfL order.
+# Used on any day no schedule rule below covers.
+lines = [
+    "metropolitan",
+    "jubilee",
+    "thameslink",
+    "circle",
+    "district",
+    "elizabeth",
+    "dlr",
+]
+
+# Optional day-of-week schedule. The first rule matching the current day wins.
+# An empty `lines` means every line.
+[[status.schedule]]
+days = "mon-thu"
+lines = ["metropolitan", "jubilee", "thameslink", "circle", "district"]
+
+[[status.schedule]]
+days = "fri"
+lines = ["metropolitan", "jubilee", "elizabeth", "circle", "district"]
+
+[[status.schedule]]
+days = "sat,sun"
+lines = []
+
+
+[status_display]
+# Canvas size for the separate status board (status.py).
+width = 480
+height = 800
+
+
+[display]
+width = 256
+height = 64
+scale = 6
+fps = 30
+# Every status_every seconds the line status board interrupts for one pass
+# through its pages, then hands the panel back.
+# While this is on, the bottom row just keeps the clock. Set to 0 and the
+# scrolling disruption ticker takes that row back instead.
+status_every = 60
+# Set true to follow the [status] lines and [[status.schedule]] day rules above.
+status_follows_schedule = true
+
+
+[refresh]
+arrivals_seconds = 10
+status_seconds = 90
