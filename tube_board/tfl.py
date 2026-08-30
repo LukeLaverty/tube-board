@@ -41,9 +41,10 @@ def wanted(mode: str, line_id: str) -> bool:
 
 def modes_for(selected: list[str]) -> str:
     """
-    Fetch National Rail too, but only if a non-TfL line was asked for.
+    Fetch National Rail too, for a selection naming a non-TfL line and for the
+    empty "everything" selection.
     """
-    if any(line not in TFL_LINE_IDS for line in selected):
+    if not selected or any(line not in TFL_LINE_IDS for line in selected):
         return f"{STATUS_MODES},{NATIONAL_RAIL_MODE}"
     return STATUS_MODES
 
@@ -77,7 +78,8 @@ class TflClient:
             line_statuses = line.get("lineStatuses") or []
             if not line_statuses:
                 continue
-            if not wanted(line.get("modeName", ""), line.get("id", "")):
+            mode = line.get("modeName", "")
+            if not wanted(mode, line.get("id", "")):
                 continue
             # A line can carry several concurrent statuses; report the worst
             # (lower severity number = more severe).
@@ -85,16 +87,22 @@ class TflClient:
                 line_statuses,
                 key=lambda s: s.get("statusSeverity", 10),
             )
+            # National Rail puts a disruption link where TfL writes prose.
+            reason = (
+                None
+                if mode == NATIONAL_RAIL_MODE
+                else (worst.get("reason") or "").strip() or None
+            )
             statuses.append(
                 LineStatus(
                     line_id=line.get("id", ""),
                     name=line.get("name", ""),
-                    mode=line.get("modeName", ""),
+                    mode=mode,
                     severity=worst.get("statusSeverity", 10),
                     description=worst.get(
                         "statusSeverityDescription", "Unknown"
                     ),
-                    reason=(worst.get("reason") or "").strip() or None,
+                    reason=reason,
                 )
             )
         return statuses

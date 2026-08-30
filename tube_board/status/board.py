@@ -22,7 +22,11 @@ RED = (196, 30, 20)
 def _font(
     name: str, size: int, weight: int | None = None
 ) -> ImageFont.FreeTypeFont:
-    font = ImageFont.truetype(str(FONT_DIRECTORY / name), size)
+    font = ImageFont.truetype(
+        str(FONT_DIRECTORY / name),
+        size,
+        layout_engine=ImageFont.Layout.BASIC,
+    )
     if weight is not None:
         with contextlib.suppress(OSError):
             font.set_variation_by_axes([14, weight])
@@ -70,30 +74,45 @@ def _wrap(
     return lines
 
 
+_PREFIX_ALIASES = {
+    "london trams": "tram",
+    "docklands light railway": "dlr",
+}
+
+
 def _normalise(name: str) -> str:
     flat = " ".join(name.lower().replace("&", "and").replace("-", " ").split())
-    return flat.removesuffix(" line")
+    flat = flat.removesuffix(" lines").removesuffix(" line")
+    return _PREFIX_ALIASES.get(flat, flat)
+
+
+def _prefix_names(head: str) -> set[str]:
+    """
+    The lines a reason prefix names. Usually one, but a shared disruption
+    arrives as "Metropolitan and Jubilee lines: ...".
+    """
+    flat = _normalise(head)
+    return {flat, *flat.replace(",", " and ").split(" and ")}
 
 
 def _strip_line_prefix(reason: str, name: str) -> str:
     """
-    Drop the "Central Line: " TfL puts on the front of a reason.
+    Drop the "Central Line: " TfL puts on the front of a reason, and give the
+    sentence that was running on from it its capital back.
     """
     head, separator, rest = reason.partition(":")
-    if not separator or not rest.strip():
+    rest = rest.strip()
+    if not separator or not rest:
         return reason
-    if _normalise(head) != _normalise(name):
+    if _normalise(name) not in _prefix_names(head):
         return reason
-    return rest.strip()
-
-
-MAX_REASON_LINES = 4
+    return rest[0].upper() + rest[1:]
 
 
 def _allocate_reasons(draw, rows, metrics: _RowMetrics, text_width, available):
     """
-    Hand out reason lines a round at a time, so every disrupted line gets
-    its first line before any line gets a second, until the space runs out.
+    Hand out reason lines a round at a time, so every disrupted line gets its
+    first line before any line gets a second, until the space runs out.
     """
     wrapped = [
         _wrap(
@@ -101,14 +120,14 @@ def _allocate_reasons(draw, rows, metrics: _RowMetrics, text_width, available):
             _strip_line_prefix(s.reason, s.name),
             metrics.reason,
             text_width,
-        )[:MAX_REASON_LINES]
+        )
         if s.reason
         else []
         for s in rows
     ]
     shown = [0] * len(rows)
     used = len(rows) * metrics.base_row
-    for depth in range(1, MAX_REASON_LINES + 1):
+    for depth in range(1, max(map(len, wrapped), default=0) + 1):
         for i, lines in enumerate(wrapped):
             if shown[i] >= min(depth, len(lines)):
                 continue
@@ -143,7 +162,7 @@ def render_status_image(
     offline: bool = False,
 ) -> Image.Image:
     width, height = size
-    scale = min(width / 800, height / 480)
+    scale = min(width, height) / 480
     image = Image.new("RGB", size, PAPER)
     draw = ImageDraw.Draw(image)
     margin = round(24 * scale)
@@ -190,10 +209,20 @@ def render_status_image(
 
     available = height - header_bottom - round(8 * scale)
 
-    for factor in (1.0, 0.85, 0.72, 0.62, 0.55):
-        metrics = _RowMetrics(scale * factor)
-        if len(rows) * metrics.base_row <= available:
-            break
+    disrupted = sum(1 for status in rows if status.reason)
+    options = [_RowMetrics(scale * f) for f in (1.0, 0.85, 0.72, 0.62, 0.55)]
+    metrics = next(
+        (m for m in options if len(rows) * m.base_row <= available),
+        options[-1],
+    )
+    metrics = next(
+        (
+            m
+            for m in options
+            if len(rows) * m.base_row + disrupted * m.reason_line <= available
+        ),
+        metrics,
+    )
     text_x = margin + metrics.chip_width + metrics.text_gap
     text_width = width - margin - text_x
     shown, wrapped = _allocate_reasons(

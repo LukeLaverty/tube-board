@@ -112,7 +112,7 @@ Everything lives in `config.toml`:
   platform's board, or leave them empty for a whole-station board.
 - **`[display]`**: LED grid size (default 256×64) and window scale.
 - **`[status]`**: Which lines the status board shows, in the order given
-  (empty means all 20, in TfL's order). See the schedule rules below.
+  (empty means all 21, in TfL's order). See the schedule rules below.
 - **`[status_display]`**: Status board canvas size (default 800×480).
 - **`[refresh]`**: API polling intervals, used by both boards.
 
@@ -126,10 +126,12 @@ another day with `--day fri`; `--lines` ignores the schedule.
 
 ### National Rail
 
-Thameslink is the one National Rail operator these boards know. Naming it
-widens the status fetch to the National Rail mode, and the other 24 operators
-on that mode are dropped as they arrive, so an "everything" selection stays a
-London board.
+Thameslink is the one National Rail operator these boards know. Naming it,
+or leaving the selection empty, widens the status fetch to the National Rail
+mode, and the other 24 operators on that mode are dropped as they arrive, so
+an "everything" selection stays a London board. Its status is kept but its
+reason is not: National Rail fills that field with a disruption link rather
+than prose.
 
 ## Project :ayout
 
