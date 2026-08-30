@@ -1,6 +1,6 @@
 # Tube Board
 
-Two live London Underground displays, powered by the free
+Two live London Underground displays, powered by TfL Open Data and the free
 [TfL Unified API](https://api.tfl.gov.uk).
 
 - **[Departure board](#departure-board-departurespy)** - a platform "next train
@@ -133,7 +133,7 @@ an "everything" selection stays a London board. Its status is kept but its
 reason is not: National Rail fills that field with a disruption link rather
 than prose.
 
-## Project :ayout
+## Project Layout
 
 The two boards are peers. Each owns its run loop and its layouts; they share
 the TfL client, the data shapes, and the LED panel both can draw on.
@@ -152,3 +152,17 @@ rules live in `ruff.toml`.
 .venv/bin/ruff check --fix .  # lint, auto-fixing what's safe.
 .venv/bin/ruff format .       # format.
 ```
+
+## Attribution and Licencing
+
+Live data comes from the [TfL Unified API](https://api.tfl.gov.uk) under
+TfL's [transport data terms](https://tfl.gov.uk/corporate/terms-and-conditions/transport-data-service):
+
+- Powered by TfL Open Data.
+- Contains OS data (c) Crown copyright and database rights 2016.
+- Geomni UK Map data (c) and database rights 2019.
+
+The fonts in [`fonts/`](fonts/) are third-party, vendored unmodified, and each
+licenced under the SIL Open Font Licence 1.1 - see
+[`fonts/README.md`](fonts/README.md) for per-font copyright notices and
+[`fonts/OFL.txt`](fonts/OFL.txt) for the licence.
