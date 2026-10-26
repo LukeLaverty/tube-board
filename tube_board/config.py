@@ -6,9 +6,33 @@ import os
 import tomllib
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-FONT_DIRECTORY = ROOT / "fonts"
-CONFIG_FILE = ROOT / "config.toml"
+CONFIG_NAME = "config.toml"
+ENV_NAME = ".env"
+# The repository root.
+CHECKOUT = Path(__file__).resolve().parent.parent
+
+
+def _search_path(name: str) -> list[Path]:
+    """
+    Where to look for a config or env file, in order. The checkout is on the
+    list so cron jobs, which run from $HOME, still find it.
+    """
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    home = Path(xdg) if xdg else Path.home() / ".config"
+    return [
+        Path.cwd() / name,
+        CHECKOUT / name,
+        home / "tube-board" / name,
+        Path("/etc/tube-board") / name,
+    ]
+
+
+def find_config(name: str = CONFIG_NAME) -> Path | None:
+    """
+    The first config file that exists, or None.
+    """
+    return next((path for path in _search_path(name) if path.exists()), None)
+
 
 DEFAULTS = {
     # Departure board.
@@ -36,9 +60,17 @@ DEFAULTS = {
 }
 
 
-def load_config(path: Path = CONFIG_FILE) -> dict:
+def load_config(path: Path | None = None) -> dict:
+    """
+    The defaults, overlaid with `path` or the first config file found. Raises
+    `FileNotFoundError` if `path` is given but missing.
+    """
+    if path is None:
+        path = find_config()
+    elif not path.exists():
+        raise FileNotFoundError(f"No config file at {path}")
     config = {section: dict(values) for section, values in DEFAULTS.items()}
-    if path.exists():
+    if path is not None:
         with open(path, "rb") as f:
             for section, values in tomllib.load(f).items():
                 config.setdefault(section, {}).update(values)
@@ -59,12 +91,13 @@ def load_config(path: Path = CONFIG_FILE) -> dict:
 def load_app_key() -> str | None:
     if key := os.environ.get("TFL_APP_KEY"):
         return key
-    env_file = ROOT / ".env"
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            name, _, value = line.partition("=")
-            if name.strip() == "TFL_APP_KEY" and value.strip():
-                return value.strip()
+    env_file = find_config(ENV_NAME)
+    if env_file is None:
+        return None
+    for line in env_file.read_text().splitlines():
+        name, _, value = line.partition("=")
+        if name.strip() == "TFL_APP_KEY" and value.strip():
+            return value.strip()
     return None
 
 
