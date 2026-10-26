@@ -4,6 +4,11 @@ Data models and TfL line constants.
 
 from dataclasses import dataclass, field
 
+Colour = tuple[int, int, int]
+
+# TfL severities 0-6 are the serious ones.
+SEVERE_MAX = 6
+
 
 @dataclass
 class Departure:
@@ -36,6 +41,10 @@ class LineStatus:
         # 10 = Good Service, 18 = No Issues.
         return self.severity in (10, 18)
 
+    @property
+    def severe(self) -> bool:
+        return self.severity <= SEVERE_MAX
+
 
 @dataclass
 class Snapshot:
@@ -51,7 +60,7 @@ class Snapshot:
 
 
 # Official TfL line colours.
-LINE_COLOURS: dict[str, tuple[int, int, int]] = {
+LINE_COLOURS: dict[str, Colour] = {
     "bakerloo": (0xB3, 0x63, 0x05),
     "central": (0xE3, 0x20, 0x17),
     "circle": (0xFF, 0xD3, 0x00),
@@ -74,6 +83,8 @@ LINE_COLOURS: dict[str, tuple[int, int, int]] = {
     "windrush": (0xED, 0x1B, 0x00),
     "thameslink": (0xE5, 0x00, 0x6D),
 }
+# For lines missing from LINE_COLOURS.
+UNKNOWN_COLOUR: Colour = (90, 90, 90)
 
 # Order used on station status displays: Tube A-Z, then Elizabeth line,
 # Overground lines A-Z, DLR, Tram.
@@ -102,7 +113,7 @@ LINE_ORDER = [
 ]
 
 
-# Listed in LINE_ORDER for running order, but fetched as National Rail rather
+# Listed in `LINE_ORDER` for running order, but fetched as National Rail rather
 # than as a TfL mode.
 NON_TFL_LINE_IDS = frozenset({"thameslink"})
 TFL_LINE_IDS = frozenset(LINE_ORDER) - NON_TFL_LINE_IDS

@@ -7,7 +7,7 @@ import time
 
 import requests
 
-from .models import (
+from ..models import (
     NON_TFL_LINE_IDS,
     TFL_LINE_IDS,
     Departure,
@@ -33,16 +33,16 @@ _ARRIVALS_CAPABLE_PREFIXES = ("940G", "910G")
 
 def wanted(mode: str, line_id: str) -> bool:
     """
-    National Rail arrives a whole mode at a time, some 25 operators of it,
-    and only Thameslink is ever shown. Drops the rest.
+    National Rail comes as a whole mode of about 25 operators; keep only
+    Thameslink.
     """
     return mode != NATIONAL_RAIL_MODE or line_id in NON_TFL_LINE_IDS
 
 
 def modes_for(selected: list[str]) -> str:
     """
-    Fetch National Rail too, for a selection naming a non-TfL line and for the
-    empty "everything" selection.
+    Add National Rail when the selection names a non-TfL line, or is empty
+    (meaning every line).
     """
     if not selected or any(line not in TFL_LINE_IDS for line in selected):
         return f"{STATUS_MODES},{NATIONAL_RAIL_MODE}"

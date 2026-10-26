@@ -1,19 +1,11 @@
 """
-Departure board layout drawn onto a native-resolution Pygame Surface.
+The departure list, as on a platform's "next train indicator".
 """
 
 import time
 
-import pygame
-
-from ..matrix import (
-    AMBER,
-    GLYPH_HEIGHT,
-    ROW_HEIGHT,
-    Fonts,
-    draw_text,
-)
-from ..models import Snapshot
+from ...models import Snapshot
+from .theme import AMBER, GLYPH_HEIGHT, OFF, ROW_HEIGHT, Canvas, Fonts
 
 TICKER_SPEED = 40  # native pixels per second.
 STALE_AFTER = 150  # seconds without data before the fallback message.
@@ -38,22 +30,17 @@ ORDINAL_SUFFIXES = {1: "st", 2: "nd", 3: "rd"}
 
 def ordinal(n: int) -> str:
     """
-    1st, 2nd, 3rd, 4th - how a platform indicator ranks its trains.
+    1st, 2nd, 3rd, 4th...
     """
-    # Teens break the last-digit rule: 11th, 12th, 13th, not 11st.
+    # 11th, 12th and 13th, not 11st.
     suffix = "th" if 11 <= n % 100 <= 13 else ORDINAL_SUFFIXES.get(n % 10, "th")
     return f"{n}{suffix}"
 
 
-class DeparturesScreen:
-    """
-    The classic platform 'next train indicator'.
-    """
-
+class DeparturesLayout:
     def __init__(self, fonts: Fonts, config: dict, ticker: bool = True):
         self._fonts = fonts
-        # The scrolling reason ticker is redundant when the status board takes
-        # the panel on a timer, so the caller can turn it off and leave the
+        # Off when the status layout interrupts on a timer, which leaves the
         # bottom row to the clock.
         self._ticker = ticker
         station = config["station"]
@@ -67,9 +54,10 @@ class DeparturesScreen:
         ]
         self._max_rows = int(station["max_rows"])
         self._show_line_names = str(station["show_line_names"]).strip().lower()
-        self._ticker_text = ""
-        self._ticker_surf: pygame.Surface | None = None
         self._ticker_offset = 0.0
+        # Rendered when the text changes and pasted each frame.
+        self._ticker_text = ""
+        self._ticker_strip: Canvas | None = None
 
     def _filtered(self, snapshot: Snapshot, limit: int):
         rows = snapshot.departures
@@ -90,16 +78,13 @@ class DeparturesScreen:
             ]
         return rows[:limit]
 
-    def render(
-        self, frame: pygame.Surface, snapshot: Snapshot, dt: float
-    ) -> None:
-        width = frame.get_width()
+    def render(self, frame: Canvas, snapshot: Snapshot, dt: float) -> None:
+        width = frame.width
         font = self._fonts.text
-        bottom_y = frame.get_height() - BOTTOM_ROW_HEIGHT
+        bottom_y = frame.height - BOTTOM_ROW_HEIGHT
 
         if snapshot.arrivals_age > STALE_AFTER:
-            draw_text(
-                frame,
+            frame.text(
                 font,
                 "Please listen for announcements",
                 width // 2,
@@ -112,47 +97,41 @@ class DeparturesScreen:
 
         pitch, rows, line_column = self._layout(snapshot, bottom_y)
         countdown_x = width - 2
-        # Size the rank column for the widest ordinal actually on the board,
-        # so "10th" does not shunt the destinations along on a taller panel.
+        # Sized to the widest rank shown, so "10th" only widens it when it is
+        # there.
         ranks = [ordinal(i + 1) for i in range(len(rows))]
-        rank_column = max((font.size(r)[0] for r in ranks), default=0) + 5
+        rank_column = max((font.width(r) for r in ranks), default=0) + 5
         for i, dep in enumerate(rows):
             y = 1 + i * pitch
-            draw_text(frame, font, ranks[i], 1, y, AMBER)
-            cd_width = draw_text(
-                frame,
-                font,
-                dep.countdown,
-                countdown_x,
-                y,
-                AMBER,
-                align="right",
+            frame.text(font, ranks[i], 1, y, AMBER)
+            cd_width = frame.text(
+                font, dep.countdown, countdown_x, y, AMBER, align="right"
             )
             if line_column:
-                frame.set_clip(
-                    pygame.Rect(rank_column, y, line_column - 4, ROW_HEIGHT)
-                )
-                draw_text(
-                    frame,
+                frame.text(
                     font,
                     short_line_name(dep),
                     rank_column,
                     y,
                     AMBER,
+                    clip=(rank_column, y, line_column - 4, ROW_HEIGHT),
                 )
-                frame.set_clip(None)
             destination_x = rank_column + line_column
             available = countdown_x - cd_width - 5 - destination_x
-            frame.set_clip(pygame.Rect(destination_x, y, available, ROW_HEIGHT))
-            draw_text(frame, font, dep.towards, destination_x, y, AMBER)
-            frame.set_clip(None)
+            frame.text(
+                font,
+                dep.towards,
+                destination_x,
+                y,
+                AMBER,
+                clip=(destination_x, y, available, ROW_HEIGHT),
+            )
 
         self._render_bottom_row(frame, snapshot, dt)
 
     def _layout(self, snapshot: Snapshot, bottom_y: int):
         """
-        Only the row spacing flexes: the font has exactly one usable size,
-        so more rows means tighter pitch rather than smaller text.
+        The font has one usable size, so more rows means a tighter pitch.
         """
         pitch = PREFERRED_PITCH
         if self._max_rows * pitch > bottom_y:
@@ -171,12 +150,12 @@ class DeparturesScreen:
         ):
             return 0
         font = self._fonts.text
-        return max(font.size(short_line_name(d))[0] for d in rows) + 5
+        return max(font.width(short_line_name(d)) for d in rows) + 5
 
-    def _render_bottom_row(self, frame, snapshot, dt) -> None:
-        width = frame.get_width()
+    def _render_bottom_row(self, frame: Canvas, snapshot, dt) -> None:
+        width = frame.width
         font = self._fonts.text
-        y = frame.get_height() - BOTTOM_ROW_HEIGHT + 1
+        y = frame.height - BOTTOM_ROW_HEIGHT + 1
         clock_text = time.strftime("%H:%M:%S")
 
         text = ""
@@ -188,46 +167,31 @@ class DeparturesScreen:
             ]
             text = "  *  ".join(dict.fromkeys(reasons))
         if not text:
-            self._ticker_surf = None
-            self._ticker_text = ""
-            draw_text(
-                frame,
-                font,
-                clock_text,
-                width // 2,
-                y,
-                AMBER,
-                align="center",
-            )
+            frame.text(font, clock_text, width // 2, y, AMBER, align="center")
             return
 
-        if text != self._ticker_text:
+        if text != self._ticker_text or self._ticker_strip is None:
             self._ticker_text = text
-            self._ticker_surf = font.render(text, False, AMBER)
+            self._ticker_strip = Canvas(
+                (max(1, font.width(text)), frame.height - y)
+            )
+            self._ticker_strip.text(font, text, 0, 0, AMBER)
+        strip = self._ticker_strip
+
         self._ticker_offset += dt * TICKER_SPEED
         x = width - self._ticker_offset
-        if x < -self._ticker_surf.get_width():
+        if x < -strip.width:
             self._ticker_offset = 0.0
             x = width
-        frame.blit(self._ticker_surf, (round(x), y))
+        frame.paste(strip.image, round(x), y)
 
         # Clock sits on top at the right; the ticker slides underneath it.
-        clock_width = font.size(clock_text)[0]
-        frame.fill(
-            (0, 0, 0),
-            pygame.Rect(
-                width - clock_width - 6,
-                y - 1,
-                clock_width + 8,
-                ROW_HEIGHT + 2,
-            ),
+        clock_width = font.width(clock_text)
+        frame.rect(
+            width - clock_width - 6,
+            y - 1,
+            clock_width + 8,
+            ROW_HEIGHT + 2,
+            OFF,
         )
-        draw_text(
-            frame,
-            font,
-            clock_text,
-            width - 2,
-            y,
-            AMBER,
-            align="right",
-        )
+        frame.text(font, clock_text, width - 2, y, AMBER, align="right")

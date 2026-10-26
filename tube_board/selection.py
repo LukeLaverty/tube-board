@@ -1,8 +1,10 @@
 """
-Day-of-week rules for which lines the status display shows.
+Which lines a status board shows, and in what order.
 """
 
 from datetime import datetime
+
+from .models import LineStatus, line_sort_key
 
 DAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 DAY_GROUPS = {
@@ -79,3 +81,51 @@ def lines_for(
                 if str(line).strip()
             ]
     return fallback
+
+
+def selection_for(
+    config: dict,
+    override: list[str] | None = None,
+    weekday: int | None = None,
+) -> list[str]:
+    """
+    A caller's override beats the day's schedule, which beats [status] lines.
+    """
+    if override is not None:
+        return override
+    fallback = [
+        line.strip().lower()
+        for line in config["status"]["lines"]
+        if line.strip()
+    ]
+    return lines_for(config["status"]["schedule"], fallback, weekday)
+
+
+def configured_lines(config: dict) -> list[str]:
+    """
+    Every line named anywhere in [status], so one fetch covers any day.
+    """
+    names = list(config["status"]["lines"])
+    for rule in config["status"]["schedule"]:
+        names.extend(rule.get("lines", []))
+    ordered = {}
+    for name in names:
+        if key := str(name).strip().lower():
+            ordered.setdefault(key)
+    return list(ordered)
+
+
+def rows_for(
+    statuses: list[LineStatus], selected: list[str] | None = None
+) -> list[LineStatus]:
+    """
+    The lines a status board shows, in the order it shows them.
+    """
+    if selected:
+        # An explicit selection sets the running order too.
+        position = {line: i for i, line in enumerate(selected)}
+        return sorted(
+            (status for status in statuses if status.line_id in position),
+            key=lambda s: position[s.line_id],
+        )
+    return sorted(statuses, key=lambda s: line_sort_key(s.line_id))

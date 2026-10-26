@@ -4,19 +4,18 @@ The line status board, drawn on the LED dot-matrix panel.
 
 from collections.abc import Callable
 
-import pygame
-
-from ..matrix import (
+from ...models import LINE_COLOURS, UNKNOWN_COLOUR, Colour, Snapshot
+from ...selection import rows_for
+from .theme import (
     AMBER,
     DIM,
+    OFF,
     RED,
     ROW_HEIGHT,
     WHITE,
+    Canvas,
     Fonts,
-    draw_text,
 )
-from ..models import LINE_COLOURS, Snapshot
-from .board import rows_for
 
 TOP_Y = 2
 ROW_PITCH = 12
@@ -27,14 +26,10 @@ NAME_GAP = 5  # keeps a long line name off the status text.
 DOT_SPACING = 3
 DOT_ROW_HEIGHT = 2
 PAGE_SECONDS = 5.0
-UNKNOWN_COLOUR = (90, 90, 90)
-# An unlit panel is already black, so Northern line's official black chip would
-# not be there. Draw its outline instead of filling it.
+# Chips darker than this, such as the Northern line's black, would not show
+# on the panel, so they are outlined instead.
 MIN_CHIP_LEVEL = 90
-SEVERE_MAX = 6  # TfL severities 0-6 are the serious ones.
-PANEL_OFF = (0, 0, 0)
-# The tube map draws these modes as a double line rather than a solid one, so
-# their chips get the same hollow middle.
+# Hollow chips, as the tube map draws these as double lines.
 DOUBLE_LINE_MODES = {
     "overground",
     "dlr",
@@ -47,19 +42,19 @@ DOUBLE_LINE_MODES = {
 LONG_LINE_NAMES = {"dlr": "Docklands Light Railway"}
 
 
-def status_colour(status) -> tuple[int, int, int]:
+def status_colour(status) -> Colour:
     if status.good:
         return WHITE
-    return RED if status.severity <= SEVERE_MAX else AMBER
+    return RED if status.severe else AMBER
 
 
 def line_name(status) -> str:
     return LONG_LINE_NAMES.get(status.line_id, status.name)
 
 
-class StatusScreen:
+class StatusLayout:
     """
-    Every line's service status, paged.
+    Line statuses, a page at a time.
     """
 
     def __init__(
@@ -78,17 +73,14 @@ class StatusScreen:
 
     def restart(self, repeat: bool = False) -> None:
         """
-        Start a fresh pass at the first page.
-
-        `repeat` keeps cycling once every page has been shown; otherwise the
-        pass holds on its last page and `finished` goes True, so a caller can
-        hand the panel back to whatever it interrupted.
+        Start a pass at the first page. With `repeat` it keeps cycling;
+        otherwise it holds the last page and sets `finished`.
         """
         self._repeat = repeat
         self._page = 0
         self._elapsed = 0.0
         self._finished = False
-        # Re-read per pass, so a schedule that rolls over midnight is picked up.
+        # Re-read each pass so the schedule rolls over at midnight.
         self._selected = self._selection() if self._selection else None
 
     @property
@@ -98,16 +90,13 @@ class StatusScreen:
         """
         return self._finished
 
-    def render(
-        self, frame: pygame.Surface, snapshot: Snapshot, dt: float
-    ) -> None:
-        width, height = frame.get_width(), frame.get_height()
+    def render(self, frame: Canvas, snapshot: Snapshot, dt: float) -> None:
+        width, height = frame.width, frame.height
         font = self._fonts.text
 
         rows = rows_for(snapshot.statuses, self._selected)
         if not rows:
-            draw_text(
-                frame,
+            frame.text(
                 font,
                 "Service information unavailable",
                 width // 2,
@@ -115,7 +104,7 @@ class StatusScreen:
                 AMBER,
                 align="center",
             )
-            # Still time out, or the panel would sit here with nothing to show.
+            # Still finish, so the panel is handed back.
             self._elapsed += dt
             if self._elapsed >= PAGE_SECONDS:
                 self._finished = True
@@ -131,10 +120,10 @@ class StatusScreen:
                 self._page += 1
             else:
                 self._finished = True
-                # Holds here rather than flashing page 1 again for the frame
-                # before the caller takes the panel back.
+                # Hold the last page so page 1 doesn't flash before the
+                # handback.
                 self._page = 0 if self._repeat else pages - 1
-        # Re-clamp: the line count changes as statuses come and go.
+        # The line count can change between frames.
         self._page = min(self._page, pages - 1)
 
         start = self._page * per_page
@@ -144,25 +133,19 @@ class StatusScreen:
         if pages > 1:
             self._render_page_dots(frame, pages, width, height)
 
-    def _render_row(self, frame, status, y: int, width: int) -> None:
+    def _render_row(self, frame: Canvas, status, y: int, width: int) -> None:
         font = self._fonts.text
         colour = LINE_COLOURS.get(status.line_id, UNKNOWN_COLOUR)
-        chip = pygame.Rect(CHIP_X, y, CHIP_WIDTH, ROW_HEIGHT)
         if max(colour) < MIN_CHIP_LEVEL:
-            # Black cannot light an LED, so outline the chip instead.
-            pygame.draw.rect(frame, WHITE, chip, width=1)
+            frame.outline(CHIP_X, y, CHIP_WIDTH, ROW_HEIGHT, WHITE)
         else:
-            frame.fill(colour, chip)
+            frame.rect(CHIP_X, y, CHIP_WIDTH, ROW_HEIGHT, colour)
             if status.mode in DOUBLE_LINE_MODES:
-                frame.fill(
-                    PANEL_OFF,
-                    pygame.Rect(CHIP_X + CHIP_WIDTH // 2, y, 1, ROW_HEIGHT),
-                )
+                frame.rect(CHIP_X + CHIP_WIDTH // 2, y, 1, ROW_HEIGHT, OFF)
 
         status_x = width - 2
-        status_width = font.size(status.description)[0]
-        draw_text(
-            frame,
+        status_width = font.width(status.description)
+        frame.text(
             font,
             status.description,
             status_x,
@@ -171,21 +154,27 @@ class StatusScreen:
             align="right",
         )
 
-        # Name gives way to the status, never the other way round.
+        # The name is clipped to leave room for the status.
         available = status_x - status_width - NAME_GAP - NAME_X
         if available > 0:
-            frame.set_clip(pygame.Rect(NAME_X, y, available, ROW_HEIGHT))
-            draw_text(frame, font, line_name(status), NAME_X, y, WHITE)
-            frame.set_clip(None)
+            frame.text(
+                font,
+                line_name(status),
+                NAME_X,
+                y,
+                WHITE,
+                clip=(NAME_X, y, available, ROW_HEIGHT),
+            )
 
     def _render_page_dots(
-        self, frame, pages: int, width: int, height: int
+        self, frame: Canvas, pages: int, width: int, height: int
     ) -> None:
         span = (pages - 1) * DOT_SPACING
         x = (width - span) // 2
         y = height - DOT_ROW_HEIGHT
         for page in range(pages):
-            frame.set_at(
-                (x + page * DOT_SPACING, y),
+            frame.pixel(
+                x + page * DOT_SPACING,
+                y,
                 WHITE if page == self._page else DIM,
             )

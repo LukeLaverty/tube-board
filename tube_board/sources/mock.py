@@ -1,11 +1,10 @@
 """
 Canned TfL data for offline development (`--mock`).
 
-The statuses deliberately mix a severe delay, a minor delay and a long reason
-string.
+The statuses include a severe delay, a minor delay and a long reason.
 """
 
-from .models import Departure, LineStatus, Snapshot
+from ..models import Departure, LineStatus, Snapshot
 
 MOCK_DEPARTURES = [
     Departure(
@@ -98,14 +97,14 @@ MOCK_STATUSES = [
 
 def mock_statuses() -> list[LineStatus]:
     """
-    Line statuses, as the status board's fetcher would return them.
+    Line statuses, as the live fetcher returns them.
     """
     return list(MOCK_STATUSES)
 
 
 def mock_snapshot() -> Snapshot:
     """
-    A poller-shaped snapshot, as the departure board consumes it.
+    A snapshot, as the poller returns it.
     """
     return Snapshot(
         departures=list(MOCK_DEPARTURES),

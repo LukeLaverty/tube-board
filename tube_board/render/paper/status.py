@@ -1,60 +1,24 @@
 """
-Line status board rendered as a static image.
-
-Deliberately e-ink friendly: paper-white background, dark text, no animation.
+The "Service Information" board: line statuses as a static image, scaled to
+the panel.
 """
 
-import contextlib
 from datetime import datetime
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
-from ..config import FONT_DIRECTORY
-from ..models import LINE_COLOURS, LineStatus, line_sort_key
-
-PAPER = (255, 255, 255)
-INK = (20, 20, 20)
-GREY = (108, 108, 108)
-RULE = (216, 216, 216)
-RED = (196, 30, 20)
-
-
-def _font(
-    name: str, size: int, weight: int | None = None
-) -> ImageFont.FreeTypeFont:
-    font = ImageFont.truetype(
-        str(FONT_DIRECTORY / name),
-        size,
-        layout_engine=ImageFont.Layout.BASIC,
-    )
-    if weight is not None:
-        with contextlib.suppress(OSError):
-            font.set_variation_by_axes([14, weight])
-    return font
-
-
-class _RowMetrics:
-    def __init__(self, s: float):
-        self.name = _font("HammersmithOne-Regular.ttf", max(10, round(19 * s)))
-        self.status = _font(
-            "Inter-Variable.ttf", max(10, round(18 * s)), weight=600
-        )
-        self.reason = _font(
-            "Inter-Variable.ttf", max(9, round(15 * s)), weight=400
-        )
-        self.chip_width = round(206 * s)
-        self.chip_height = round(30 * s)
-        self.base_row = round(42 * s)
-        self.reason_line = round(20 * s)
-        self.text_gap = round(18 * s)
-        self.chip_pad = round(10 * s)
-
-
-def _chip_text_colour(
-    colour: tuple[int, int, int],
-) -> tuple[int, int, int]:
-    luminance = 0.299 * colour[0] + 0.587 * colour[1] + 0.114 * colour[2]
-    return INK if luminance > 160 else PAPER
+from ...models import LINE_COLOURS, UNKNOWN_COLOUR, LineStatus
+from ...selection import rows_for
+from .theme import (
+    GREY,
+    INK,
+    PAPER,
+    RED,
+    RULE,
+    RowMetrics,
+    chip_text_colour,
+    font,
+)
 
 
 def _wrap(
@@ -97,8 +61,8 @@ def _prefix_names(head: str) -> set[str]:
 
 def _strip_line_prefix(reason: str, name: str) -> str:
     """
-    Drop the "Central Line: " TfL puts on the front of a reason, and give the
-    sentence that was running on from it its capital back.
+    Drop the "Central Line: " prefix TfL puts on reasons and capitalise what
+    follows.
     """
     head, separator, rest = reason.partition(":")
     rest = rest.strip()
@@ -109,10 +73,10 @@ def _strip_line_prefix(reason: str, name: str) -> str:
     return rest[0].upper() + rest[1:]
 
 
-def _allocate_reasons(draw, rows, metrics: _RowMetrics, text_width, available):
+def _allocate_reasons(draw, rows, metrics: RowMetrics, text_width, available):
     """
-    Hand out reason lines a round at a time, so every disrupted line gets its
-    first line before any line gets a second, until the space runs out.
+    Share out reason lines round-robin, so every disrupted line gets one before
+    any gets a second.
     """
     wrapped = [
         _wrap(
@@ -138,22 +102,6 @@ def _allocate_reasons(draw, rows, metrics: _RowMetrics, text_width, available):
     return shown, wrapped
 
 
-def rows_for(
-    statuses: list[LineStatus], selected: list[str] | None = None
-) -> list[LineStatus]:
-    """
-    The lines this board shows, in the order it shows them.
-    """
-    if selected:
-        # An explicit selection sets the running order too.
-        position = {line: i for i, line in enumerate(selected)}
-        return sorted(
-            (status for status in statuses if status.line_id in position),
-            key=lambda s: position[s.line_id],
-        )
-    return sorted(statuses, key=lambda s: line_sort_key(s.line_id))
-
-
 def render_status_image(
     statuses: list[LineStatus],
     size: tuple[int, int] = (800, 480),
@@ -169,10 +117,8 @@ def render_status_image(
 
     rows = rows_for(statuses, selected)
 
-    header_font = _font(
-        "HammersmithOne-Regular.ttf", max(14, round(30 * scale))
-    )
-    updated_font = _font(
+    header_font = font("HammersmithOne-Regular.ttf", max(14, round(30 * scale)))
+    updated_font = font(
         "Inter-Variable.ttf", max(9, round(14 * scale)), weight=500
     )
     draw.text(
@@ -198,7 +144,7 @@ def render_status_image(
     )
 
     if not rows:
-        fallback = _RowMetrics(scale)
+        fallback = RowMetrics(scale)
         draw.text(
             (margin, header_bottom + 20),
             "No line status data",
@@ -210,7 +156,7 @@ def render_status_image(
     available = height - header_bottom - round(8 * scale)
 
     disrupted = sum(1 for status in rows if status.reason)
-    options = [_RowMetrics(scale * f) for f in (1.0, 0.85, 0.72, 0.62, 0.55)]
+    options = [RowMetrics(scale * f) for f in (1.0, 0.85, 0.72, 0.62, 0.55)]
     metrics = next(
         (m for m in options if len(rows) * m.base_row <= available),
         options[-1],
@@ -234,7 +180,7 @@ def render_status_image(
     for index, (status, row_height) in enumerate(
         zip(rows, heights, strict=True)
     ):
-        colour = LINE_COLOURS.get(status.line_id, (90, 90, 90))
+        colour = LINE_COLOURS.get(status.line_id, UNKNOWN_COLOUR)
         chip_y = (
             y + (metrics.base_row - metrics.chip_height) // 2 - round(2 * scale)
         )
@@ -255,13 +201,13 @@ def render_status_image(
             ),
             status.name,
             font=metrics.name,
-            fill=_chip_text_colour(colour),
+            fill=chip_text_colour(colour),
             anchor="lm",
         )
 
         if status.good:
             status_colour = GREY
-        elif status.severity <= 6:
+        elif status.severe:
             status_colour = RED
         else:
             status_colour = INK

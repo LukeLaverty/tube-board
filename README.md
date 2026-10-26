@@ -1,30 +1,48 @@
 # Tube Board
 
-Two live London Underground displays, powered by TfL Open Data and the free
+Two live London Underground displays, using data from the free
 [TfL Unified API](https://api.tfl.gov.uk).
 
-- **[Departure board](#departure-board-departurespy)** - a platform "next train
-  indicator" on an LED dot-matrix panel.
-- **[Status board](#status-board-statuspy)** - a "service information" panel of
+- **[Departure board](#departure-board-departurespy)**: a platform "next train
+  indicator" for an LED dot-matrix panel.
+- **[Status board](#status-board-statuspy)**: a "service information" panel of
   line statuses and disruption reasons.
 
 ## Setup
 
 ```sh
 python -m venv .venv
-.venv/bin/pip install requests pygame Pillow ruff
+.venv/bin/pip install Pillow requests   # required.
+.venv/bin/pip install pygame            # to preview a board in a window.
+.venv/bin/pip install pytest ruff       # for development.
 ```
 
-An API key is optional at hobby polling rates; see `.env.example`.
+Pygame is only used for the preview window, so it isn't needed to render a
+board to a file.
+
+The project itself isn't installed as a package; run it from the checkout.
+Config is read from `--config PATH` if given, otherwise from the first of these
+that exists:
+
+1. `./config.toml`
+2. `config.toml` in the checkout
+3. `~/.config/tube-board/config.toml`
+4. `/etc/tube-board/config.toml`
+
+`.env` is looked for in the same places. An API key is optional at hobby polling
+rates; see `.env.example`.
+
+`departures.py` and `status.py` are shorthands for `python -m tube_board
+departures` and `python -m tube_board status`, and take the same flags.
 
 ## Departure Board (`departures.py`)
 
-A platform "next train indicator", rendered for an LED dot-matrix panel using
-the [London Underground Dot Matrix Typeface](https://github.com/petykowski/London-Underground-Dot-Matrix-Typeface).
+A platform "next train indicator", drawn with the
+[London Underground Dot Matrix Typeface](https://github.com/petykowski/London-Underground-Dot-Matrix-Typeface).
 
 ```sh
 .venv/bin/python departures.py
-.venv/bin/python departures.py --search "canary wharf"  # find a station's stop ID.
+.venv/bin/python -m tube_board search "canary wharf"  # find a stop ID.
 ```
 
 ### Flags
@@ -33,7 +51,7 @@ the [London Underground Dot Matrix Typeface](https://github.com/petykowski/Londo
 |--------------------------|------------------------------------------------------|
 | `--lines`, `--platforms` | Filters, or `all`                                    |
 | `--rows N`               | Number of departure rows                             |
-| `--status-every N`       | Seconds between line status passes, `0` for tab only |
+| `--status-every N`       | Seconds between line status passes, `0` for Tab only |
 | `--mock`                 | Canned data, no network                              |
 | `--screenshot out.png`   | Render headless and save a PNG                       |
 
@@ -46,14 +64,26 @@ the [London Underground Dot Matrix Typeface](https://github.com/petykowski/Londo
 .venv/bin/python departures.py --lines circle,hammersmith-city --platforms "Platform 2"
 ```
 
-A line-name column appears automatically whenever the board mixes lines
-(`show_line_names` in config overrides this). Grid size and window scale can be
-configured in `config.toml`.
+A line-name column appears when the board shows more than one line. Set
+`show_line_names` to `"always"` or `"never"` to override that.
+
+### Status Passes
+
+Every `status_every` seconds (default 60), the panel switches to the line
+status board for one pass through its pages, then back to departures. Passes
+start on the next whole minute, so with the default there is one every minute.
+Tab shows the status board and keeps it there until tab is pressed again.
+
+While passes are on, the bottom row shows the clock. With `status_every = 0`,
+it shows a scrolling ticker of disruptions instead.
+
+The pass lists every line unless `status_follows_schedule = true`, which uses
+the `[status]` selection and schedule.
 
 ## Status Board (`status.py`)
 
 A "service information" panel listing each selected line with its status and
-disruption reasons. Rendered as a static, e-ink friendly image.
+any disruption reason, as a static image suitable for e-ink.
 
 ```sh
 .venv/bin/python status.py
@@ -66,90 +96,111 @@ disruption reasons. Rendered as a static, e-ink friendly image.
 | `--lines`     | Ignore the schedule and show these |
 | `--day fri`   | Preview another day's schedule     |
 | `--once PATH` | Fetch once, save a PNG, exit       |
-| `--text`      | The same board in the terminal     |
+| `--text`      | Print the board to the terminal    |
 | `--mock`      | Canned data, no network            |
 
 ### Examples
 
 ```sh
-# Preview Friday's scheduled selection without waiting for Friday.
+# Preview Friday's selection.
 .venv/bin/python status.py --day fri --once friday.png
-# A one-shot render for cron, e.g. an e-ink refresh every 15 minutes.
+# A one-shot render, e.g. from cron for an e-ink refresh.
 .venv/bin/python status.py --once /tmp/status.png
 ```
 
-With many lines selected, rows shrink and reason text is trimmed to fit - pick
-a subset for the fullest layout.
+`--once` exits with status 1 and writes nothing if the API can't be reached.
 
-## Both Boards
+With many lines selected, rows shrink and reasons are cut short to fit.
 
-`Q`/`ESC` quits either window; `R` forces a refresh on the status board.
+## Keys
 
-### Status Passes on the Departure Board
-
-The departure board's panel shows departures by default. Every `status_every`
-seconds (default 60) the line status board interrupts for one pass through its
-pages and then hands the panel back; `tab` calls it up at any time and pins it
-there until you press `tab` again.
-
-Passes are timed off the clock rather than off startup: the first lands on the
-next whole minute and the rest follow at the interval, so the default puts one
-on every minute no matter how long a pass runs or when the board was started.
-
-The bottom row carries the clock while that is running, since the status board
-is already reporting the disruptions. Set `status_every = 0` and the scrolling
-disruption ticker takes the row back instead, with the status board left to
-`tab`. Either way, `status_follows_schedule = true` makes that pass honour the
-`[status]` selection and its day rules rather than listing every line.
+| Key        | Effect                                |
+|------------|---------------------------------------|
+| `Q`, `Esc` | Quit                                  |
+| `Tab`      | Show or hide status (departure board) |
+| `R`        | Refresh now (status board)            |
 
 ## Configuration
 
-Everything lives in `config.toml`:
+All settings live in `config.toml`. A missing `--config` file or a bad schedule
+rule stops either board at startup.
 
-- **`[station]`**: Which station (`id`, from `--search`), plus `lines` and
-  `platforms` filters. Both are lists; empty means "everything". Use one of
-  each (`lines = ["victoria"]`, `platforms = ["Southbound"]`) to mimic a single
-  platform's board, or leave them empty for a whole-station board.
-- **`[display]`**: LED grid size (default 256×64) and window scale.
-- **`[status]`**: Which lines the status board shows, in the order given
-  (empty means all 21, in TfL's order). See the schedule rules below.
-- **`[status_display]`**: Status board canvas size (default 800×480).
-- **`[refresh]`**: API polling intervals, used by both boards.
+- **`[station]`**: the station `id` (from `python -m tube_board search`), and
+  `lines` and `platforms` filters. Both are lists, and empty means everything.
+  For example, `lines = ["victoria"]` and `platforms = ["Southbound"]` give a
+  single platform's board.
+- **`[display]`**: LED panel size (default 256×64), window scale, and the
+  status pass settings above.
+- **`[status]`**: which lines the status board shows, in the order given. Empty
+  means all 21, in TfL's order.
+- **`[status_display]`**: status board size (default 800×480).
+- **`[refresh]`**: API polling intervals for both boards.
 
 ### Scheduling the Status Selection
 
-Optional `[[status.schedule]]` blocks vary the selection by day: each has a
-`days` spec (`"mon-thu"`, `"fri"`, `"sat,sun"`, `"weekday"`, `"weekend"`,
-`"all"`) and its own `lines`. The first rule matching today wins, and the board
-re-checks on every refresh so it follows the schedule over midnight. Preview
-another day with `--day fri`; `--lines` ignores the schedule.
+Optional `[[status.schedule]]` blocks change the selection by day. Each has a
+`days` value (`"mon-thu"`, `"fri"`, `"sat,sun"`, `"weekday"`, `"weekend"`,
+`"all"`) and its own `lines`. The first matching rule wins. The board checks
+again on every refresh, so it switches over at midnight.
 
 ### National Rail
 
-Thameslink is the one National Rail operator these boards know. Naming it,
-or leaving the selection empty, widens the status fetch to the National Rail
-mode, and the other 24 operators on that mode are dropped as they arrive, so
-an "everything" selection stays a London board. Its status is kept but its
-reason is not: National Rail fills that field with a disruption link rather
-than prose.
+Thameslink is the only National Rail operator the boards support. Selecting it,
+or leaving the selection empty, adds National Rail to the status fetch; the
+other operators are filtered out. Its reason text is dropped, because National
+Rail returns a link there instead of a description.
 
 ## Project Layout
 
-The two boards are peers. Each owns its run loop and its layouts; they share
-the TfL client, the data shapes, and the LED panel both can draw on.
+```
+tube_board/
+  render/       layouts: data in, image out
+    led/        LED panel theme, departures and status
+    paper/      e-ink theme and status
+    fonts/      vendored TTFs
+    text.py     the status board as text
+  boards/       panel.py and paper.py: what's on screen and when
+  drivers/      window.py (Pygame preview) and png.py: where frames go
+  runner.py     the frame loop
+  sources/      tfl.py (live API) and mock.py
+  selection.py  which lines to show, and in what order
+  config.py     config files and defaults
+  models.py     data classes and line constants
+  cli.py        argument parsing and setup
+departures.py   shorthand for `python -m tube_board departures`
+status.py       shorthand for `python -m tube_board status`
+```
 
-Fonts are vendored in `fonts/`: the London Underground dot-matrix TTFs for the
-departure board, plus Hammersmith One (Johnston-style, for the status board's
-headings and line names) and Inter (status and reason text).
+Boards render Pillow images and drivers display them, so any board works with
+any driver. Pillow is used rather than Pygame because LED panel and e-ink
+libraries also take Pillow images.
 
-## Linting and formatting
+The LED layouts draw without antialiasing at the font's native 9px size, so
+each dot of a glyph is one lamp. The status board uses Hammersmith One for
+headings and line names, and Inter for status and reason text.
 
-[Ruff](https://docs.astral.sh/ruff/) handles both linting and formatting;
-rules live in `ruff.toml`.
+## Tests
+
+```sh
+.venv/bin/pytest
+```
+
+`pytest.ini` puts the checkout on `sys.path`, so nothing needs installing.
+
+`tests/golden/` holds reference images for the LED layouts, compared pixel for
+pixel. After an intended layout change, regenerate them and check the diff:
+
+```sh
+UPDATE_GOLDENS=1 .venv/bin/pytest tests/test_render.py
+```
+
+## Linting and Formatting
+
+[Ruff](https://docs.astral.sh/ruff/) handles both, configured in `ruff.toml`.
 
 ```sh
 .venv/bin/ruff check .        # lint.
-.venv/bin/ruff check --fix .  # lint, auto-fixing what's safe.
+.venv/bin/ruff check --fix .  # lint and apply safe fixes.
 .venv/bin/ruff format .       # format.
 ```
 
@@ -162,7 +213,8 @@ TfL's [transport data terms](https://tfl.gov.uk/corporate/terms-and-conditions/t
 - Contains OS data (c) Crown copyright and database rights 2016.
 - Geomni UK Map data (c) and database rights 2019.
 
-The fonts in [`fonts/`](fonts/) are third-party, vendored unmodified, and each
-licenced under the SIL Open Font Licence 1.1 - see
-[`fonts/README.md`](fonts/README.md) for per-font copyright notices and
-[`fonts/OFL.txt`](fonts/OFL.txt) for the licence.
+The fonts in [`tube_board/render/fonts/`](tube_board/render/fonts/) are
+third-party, unmodified, and licenced under the SIL Open Font Licence 1.1. See
+[`fonts/README.md`](tube_board/render/fonts/README.md) for each font's
+copyright notice and [`fonts/OFL.txt`](tube_board/render/fonts/OFL.txt) for the
+licence.
