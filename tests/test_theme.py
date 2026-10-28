@@ -67,6 +67,12 @@ class TestCanvas:
         assert left >= 10
         assert right <= 50
 
+    def test_clipping_keeps_what_was_already_drawn(self):
+        canvas = Canvas((40, 12))
+        canvas.rect(0, 0, 40, 12, AMBER)
+        canvas.text(font, "Hi", 2, 1, WHITE, clip=(0, 0, 20, 12))
+        assert canvas.image.getpixel((19, 11)) == AMBER
+
     def test_a_zero_width_clip_draws_nothing(self):
         canvas = Canvas((256, 16))
         canvas.text(font, "Anything", 10, 0, WHITE, clip=(10, 0, 0, 10))

@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tube-board"
+version = "0.1.0"
+description = "Live London Underground departure and status boards, from TfL Open Data."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "Pillow>=10.1",
+    "requests>=2.28",
+]
+
+[project.optional-dependencies]
+# Only to preview a board in a window; rendering to a file needs neither.
+window = ["pygame>=2.5"]
+dev = ["tube-board[window]", "pytest", "ruff"]
+
+[project.scripts]
+tube-board = "tube_board.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["tube_board*"]
+
+[tool.setuptools.package-data]
+"tube_board.render" = ["fonts/*"]

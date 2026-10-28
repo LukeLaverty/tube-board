@@ -12,15 +12,18 @@ Two live London Underground displays, using data from the free
 
 ```sh
 python -m venv .venv
-.venv/bin/pip install Pillow requests   # required.
-.venv/bin/pip install pygame            # to preview a board in a window.
-.venv/bin/pip install pytest ruff       # for development.
+.venv/bin/pip install -e .           # required: Pillow and requests.
+.venv/bin/pip install -e '.[window]' # also Pygame, to preview in a window.
+.venv/bin/pip install -e '.[dev]'    # also pytest and ruff, for development.
 ```
 
 Pygame is only used for the preview window, so it isn't needed to render a
 board to a file.
 
-The project itself isn't installed as a package; run it from the checkout.
+Installing adds a `tube-board` command, so `.venv/bin/tube-board status` works
+from any directory, cron included. Running from the checkout without
+installing still works too.
+
 Config is read from `--config PATH` if given, otherwise from the first of these
 that exists:
 
@@ -105,7 +108,7 @@ any disruption reason, as a static image suitable for e-ink.
 # Preview Friday's selection.
 .venv/bin/python status.py --day fri --once friday.png
 # A one-shot render, e.g. from cron for an e-ink refresh.
-.venv/bin/python status.py --once /tmp/status.png
+/path/to/tube-board/.venv/bin/tube-board status --once /tmp/status.png
 ```
 
 `--once` exits with status 1 and writes nothing if the API can't be reached.
@@ -122,8 +125,10 @@ With many lines selected, rows shrink and reasons are cut short to fit.
 
 ## Configuration
 
-All settings live in `config.toml`. A missing `--config` file or a bad schedule
-rule stops either board at startup.
+All settings live in `config.toml`, and the whole file is checked at startup.
+A missing `--config` file, an unknown section or setting, a value of the wrong
+type or out of range, or a bad schedule rule stops either board with a message
+saying which setting is wrong.
 
 - **`[station]`**: the station `id` (from `python -m tube_board search`), and
   `lines` and `platforms` filters. Both are lists, and empty means everything.
@@ -168,6 +173,7 @@ tube_board/
   models.py     data classes and line constants
   cli.py        argument parsing and setup
 departures.py   shorthand for `python -m tube_board departures`
+pyproject.toml  packaging, dependencies, and the `tube-board` command
 status.py       shorthand for `python -m tube_board status`
 ```
 
@@ -185,7 +191,8 @@ headings and line names, and Inter for status and reason text.
 .venv/bin/pytest
 ```
 
-`pytest.ini` puts the checkout on `sys.path`, so nothing needs installing.
+`pytest.ini` puts the checkout on `sys.path`, so the tests run whether or not
+the package is installed.
 
 `tests/golden/` holds reference images for the LED layouts, compared pixel for
 pixel. After an intended layout change, regenerate them and check the diff:

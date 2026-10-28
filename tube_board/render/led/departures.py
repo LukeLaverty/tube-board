@@ -4,6 +4,7 @@ The departure list, as on a platform's "next train indicator".
 
 import time
 
+from ...config import Config
 from ...models import Snapshot
 from .theme import AMBER, GLYPH_HEIGHT, OFF, ROW_HEIGHT, Canvas, Fonts
 
@@ -38,22 +39,22 @@ def ordinal(n: int) -> str:
 
 
 class DeparturesLayout:
-    def __init__(self, fonts: Fonts, config: dict, ticker: bool = True):
+    def __init__(self, fonts: Fonts, config: Config, ticker: bool = True):
         self._fonts = fonts
         # Off when the status layout interrupts on a timer, which leaves the
         # bottom row to the clock.
         self._ticker = ticker
-        station = config["station"]
+        station = config.station
         self._lines = [
-            line.strip().lower() for line in station["lines"] if line.strip()
+            line.strip().lower() for line in station.lines if line.strip()
         ]
         self._platforms = [
             platform.strip().lower()
-            for platform in station["platforms"]
+            for platform in station.platforms
             if platform.strip()
         ]
-        self._max_rows = int(station["max_rows"])
-        self._show_line_names = str(station["show_line_names"]).strip().lower()
+        self._max_rows = station.max_rows
+        self._show_line_names = station.show_line_names
         self._ticker_offset = 0.0
         # Rendered when the text changes and pasted each frame.
         self._ticker_text = ""

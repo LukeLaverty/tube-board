@@ -6,7 +6,7 @@ doesn't need requests.
 import time
 from collections.abc import Callable
 
-from ..config import load_app_key
+from ..config import Config, load_app_key
 from ..models import LineStatus, Snapshot
 
 # Seconds a headless render waits for the first live poll.
@@ -31,7 +31,7 @@ def status_fetcher(
 
 
 def snapshot_source(
-    config: dict,
+    config: Config,
     mock: bool = False,
     *,
     wait_for_data: bool = False,
@@ -49,9 +49,9 @@ def snapshot_source(
 
     poller = Poller(
         TflClient(load_app_key()),
-        config["station"]["id"],
-        arrivals_every=float(config["refresh"]["arrivals_seconds"]),
-        status_every=float(config["refresh"]["status_seconds"]),
+        config.station.id,
+        arrivals_every=config.refresh.arrivals_seconds,
+        status_every=config.refresh.status_seconds,
         status_modes=status_modes or STATUS_MODES,
     )
     poller.start()

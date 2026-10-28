@@ -4,6 +4,7 @@ list, and when it hands the panel back.
 """
 
 from tube_board.boards.panel import PanelBoard, _advance, _next_minute
+from tube_board.config import Config, Display, Station
 from tube_board.render.led.status import PAGE_SECONDS
 from tube_board.sources.mock import mock_snapshot
 
@@ -12,20 +13,10 @@ FRAME = 0.25
 
 
 def board(status_every: float = 5.0) -> PanelBoard:
-    config = {
-        "station": {
-            "name": "Test",
-            "lines": [],
-            "platforms": [],
-            "show_line_names": "auto",
-            "max_rows": 3,
-        },
-        "display": {
-            "width": 256,
-            "height": 64,
-            "status_every": status_every,
-        },
-    }
+    config = Config(
+        station=Station(name="Test"),
+        display=Display(status_every=status_every),
+    )
     # Synthetic seconds, so tests don't wait for a real minute.
     return PanelBoard(config, mock_snapshot, wall_clock=False)
 
@@ -57,6 +48,18 @@ class TestAdvance:
 
     def test_leaves_the_trigger_alone_when_there_is_no_interval(self):
         assert _advance(10.0, 0.0, 99.0) == 10.0
+
+    def test_leaves_a_trigger_that_is_still_ahead_alone(self):
+        assert _advance(14.0, 5.0, 12.0) == 14.0
+
+    def test_a_clock_leaping_forward_keeps_the_slots_on_their_grid(self):
+        # A year's jump, as when a Pi first syncs NTP, in one step.
+        year = 365 * 24 * 3600
+        assert _advance(60.0, 60.0, year + 30.0) == year + 60.0
+
+    def test_a_clock_going_back_pulls_the_trigger_in(self):
+        # Without this the next pass would wait for the clock to catch up.
+        assert _advance(10_000.0, 60.0, 130.0) == 160.0
 
 
 class TestStatusInterrupt:
