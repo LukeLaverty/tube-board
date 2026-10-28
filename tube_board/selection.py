@@ -3,8 +3,13 @@ Which lines a status board shows, and in what order.
 """
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from .models import LineStatus, line_sort_key
+
+if TYPE_CHECKING:
+    # Only for annotations: `config.py` imports this module to check schedules.
+    from .config import Config
 
 DAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 DAY_GROUPS = {
@@ -84,7 +89,7 @@ def lines_for(
 
 
 def selection_for(
-    config: dict,
+    config: "Config",
     override: list[str] | None = None,
     weekday: int | None = None,
 ) -> list[str]:
@@ -94,19 +99,17 @@ def selection_for(
     if override is not None:
         return override
     fallback = [
-        line.strip().lower()
-        for line in config["status"]["lines"]
-        if line.strip()
+        line.strip().lower() for line in config.status.lines if line.strip()
     ]
-    return lines_for(config["status"]["schedule"], fallback, weekday)
+    return lines_for(config.status.schedule, fallback, weekday)
 
 
-def configured_lines(config: dict) -> list[str]:
+def configured_lines(config: "Config") -> list[str]:
     """
     Every line named anywhere in [status], so one fetch covers any day.
     """
-    names = list(config["status"]["lines"])
-    for rule in config["status"]["schedule"]:
+    names = list(config.status.lines)
+    for rule in config.status.schedule:
         names.extend(rule.get("lines", []))
     ordered = {}
     for name in names:

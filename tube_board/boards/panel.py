@@ -8,8 +8,10 @@ from collections.abc import Callable
 
 from PIL import Image
 
+from ..config import Config
 from ..models import Snapshot
 from ..render.led.departures import DeparturesLayout
+from ..render.led.layout import Layout, PassLayout
 from ..render.led.status import StatusLayout
 from ..render.led.theme import Canvas, Fonts
 from .base import Board
@@ -24,14 +26,13 @@ def _next_minute(now: float) -> float:
 
 def _advance(next_at: float, every: float, now: float) -> float:
     """
-    Move a trigger to the first slot after `now`, skipping any missed while
-    the status layout held the panel.
+    Move a trigger to the first slot after `now` on its own grid of `every`
+    seconds, skipping any missed while the status layout held the panel.
     """
     if every <= 0:
         return next_at
-    while next_at <= now:
-        next_at += every
-    return next_at
+    ahead = (next_at - now) % every
+    return now + (ahead or every)
 
 
 class PanelBoard(Board):
@@ -42,24 +43,24 @@ class PanelBoard(Board):
 
     def __init__(
         self,
-        config: dict,
+        config: Config,
         get_snapshot: Callable[[], Snapshot],
         *,
         selection: Callable[[], list[str]] | None = None,
         wall_clock: bool = True,
     ):
-        display = config["display"]
-        super().__init__((int(display["width"]), int(display["height"])))
+        display = config.display
+        super().__init__((display.width, display.height))
         self._get_snapshot = get_snapshot
-        self._status_every = float(display.get("status_every", 0) or 0)
+        self._status_every = display.status_every
         # On the wall clock, passes land on whole minutes. Headless renders
         # count synthetic seconds so they don't wait in real time.
         self._wall_clock = wall_clock
         self._elapsed = 0.0
 
         fonts = Fonts()
-        self._status = StatusLayout(fonts, selection)
-        self._layouts = (
+        self._status: PassLayout = StatusLayout(fonts, selection)
+        self._layouts: tuple[Layout, PassLayout] = (
             DeparturesLayout(fonts, config, ticker=not self._status_every),
             self._status,
         )
@@ -94,9 +95,9 @@ class PanelBoard(Board):
             if self._status_every and now >= self._next_status:
                 self._current, self._pinned = 1, False
                 self._status.restart()
-                self._next_status = _advance(
-                    self._next_status, self._status_every, now
-                )
+            self._next_status = _advance(
+                self._next_status, self._status_every, now
+            )
         elif not self._pinned and self._status.finished:
             self._current = 0
             self._next_status = _advance(

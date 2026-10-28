@@ -17,8 +17,8 @@ from argparse import (
 from pathlib import Path
 
 from . import runner
-from .config import id_list, load_config
-from .selection import configured_lines, day_index, selection_for, validate
+from .config import Config, id_list, load_config
+from .selection import configured_lines, day_index, selection_for
 from .sources import snapshot_source, status_fetcher
 
 SCREENSHOT_FRAMES = 90  # ~3 seconds at 30 FPS.
@@ -128,21 +128,23 @@ def parse_args(
     return parser.parse_args(argv)
 
 
-def apply_overrides(config: dict, args: Namespace) -> None:
-    station = config["station"]
+def apply_overrides(config: Config, args: Namespace) -> None:
+    station = config.station
     for value, key in (
         (args.lines, "lines"),
         (args.platforms, "platforms"),
     ):
         if value is not None:
-            station[key] = (
-                [] if value.strip().lower() == "all" else id_list(value)
+            setattr(
+                station,
+                key,
+                [] if value.strip().lower() == "all" else id_list(value),
             )
     if args.rows:
-        station["max_rows"] = args.rows
+        station.max_rows = args.rows
     # 0 means never, so compare against None.
     if args.status_every is not None:
-        config["display"]["status_every"] = args.status_every
+        config.display.status_every = args.status_every
 
 
 def run_search(query: str) -> int:
@@ -159,13 +161,13 @@ def run_search(query: str) -> int:
     return 0
 
 
-def run_departures(config: dict, args: Namespace) -> int:
+def run_departures(config: Config, args: Namespace) -> int:
     # Deferred so `search` and `status` don't import Pygame.
     from .boards.panel import PanelBoard
     from .drivers.window import Window
 
     apply_overrides(config, args)
-    display = config["display"]
+    display = config.display
     headless = bool(args.screenshot)
 
     status_modes = None
@@ -186,21 +188,21 @@ def run_departures(config: dict, args: Namespace) -> int:
             config,
             get_snapshot,
             selection=(lambda: selection_for(config))
-            if display.get("status_follows_schedule")
+            if display.status_follows_schedule
             else None,
             wall_clock=not headless,
         )
         with Window(
             *board.size,
-            int(display["scale"]),
-            title=f"Tube Board - {config['station']['name']}",
+            display.scale,
+            title=f"Tube Board - {config.station.name}",
             dot_matrix=True,
             headless=headless,
         ) as driver:
             runner.run(
                 board,
                 driver,
-                fps=int(display["fps"]),
+                fps=display.fps,
                 frames=SCREENSHOT_FRAMES if headless else None,
                 fixed_dt=SCREENSHOT_DT if headless else None,
             )
@@ -212,7 +214,7 @@ def run_departures(config: dict, args: Namespace) -> int:
     return 0
 
 
-def run_status(config: dict, args: Namespace) -> int:
+def run_status(config: Config, args: Namespace) -> int:
     try:
         weekday = day_index(args.day) if args.day else None
     except ValueError as exception:
@@ -271,10 +273,8 @@ def main(
         return run_search(args.search)
 
     try:
+        # Checks the whole file, schedule included, before either board starts.
         config = load_config(args.config)
-        # Both boards can follow the schedule, so check it before either
-        # starts rather than at the first status pass.
-        validate(config["status"]["schedule"])
     except (FileNotFoundError, ValueError) as exception:
         sys.exit(f"Config error: {exception}")
     if args.command == "departures":

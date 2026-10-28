@@ -4,6 +4,7 @@ Which lines a board shows, and in what order.
 
 import pytest
 
+from tube_board.config import Config, Status
 from tube_board.models import LineStatus
 from tube_board.selection import (
     configured_lines,
@@ -95,12 +96,12 @@ class TestLinesFor:
 
 
 class TestSelectionFor:
-    CONFIG = {
-        "status": {
-            "lines": ["circle", "district"],
-            "schedule": [{"days": "mon", "lines": ["jubilee"]}],
-        }
-    }
+    CONFIG = Config(
+        status=Status(
+            lines=["circle", "district"],
+            schedule=[{"days": "mon", "lines": ["jubilee"]}],
+        )
+    )
 
     def test_override_beats_everything(self):
         assert selection_for(self.CONFIG, ["dlr"], weekday=MON) == ["dlr"]
@@ -119,15 +120,15 @@ class TestSelectionFor:
 
 
 def test_configured_lines_covers_every_day_once():
-    config = {
-        "status": {
-            "lines": ["circle", "district"],
-            "schedule": [
+    config = Config(
+        status=Status(
+            lines=["circle", "district"],
+            schedule=[
                 {"days": "mon", "lines": ["jubilee", "circle"]},
                 {"days": "fri", "lines": ["elizabeth"]},
             ],
-        }
-    }
+        )
+    )
     # Every line named anywhere, de-duplicated, so one fetch covers any day.
     assert configured_lines(config) == [
         "circle",

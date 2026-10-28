@@ -27,6 +27,12 @@ _STATION_SUFFIXES = (
     " Station",
 )
 
+# The longest wait between retries of a failing feed. Kept short of the
+# departure board's 150s stale limit, so a recovered API is seen promptly.
+BACKOFF_MAX = 120.0
+# How long `stop()` waits for an in-flight fetch.
+STOP_TIMEOUT = 2.0
+
 # NaPTAN ID prefixes for stops the arrivals endpoint accepts.
 _ARRIVALS_CAPABLE_PREFIXES = ("940G", "910G")
 
@@ -182,6 +188,16 @@ class TflClient:
         return out
 
 
+def backoff(every: float, failures: int) -> float:
+    """
+    Seconds until a feed is next fetched: its usual interval while healthy,
+    doubling with each failure in a row, up to `BACKOFF_MAX`.
+    """
+    if not failures:
+        return every
+    return min(every * 2**failures, max(every, BACKOFF_MAX))
+
+
 class Poller:
     """
     Background thread keeping arrivals and line status fresh.
@@ -207,13 +223,23 @@ class Poller:
         self._statuses: list[LineStatus] = []
         self._arrivals_at = 0.0
         self._status_at = 0.0
-        self._error: str | None = None
+        # Kept per feed, so one recovering doesn't hide the other failing.
+        self._arrivals_error: str | None = None
+        self._status_error: str | None = None
+        self._arrivals_failures = 0
+        self._status_failures = 0
 
     def start(self) -> None:
         self._thread.start()
 
-    def stop(self) -> None:
+    def stop(self, timeout: float = STOP_TIMEOUT) -> None:
+        """
+        Stop polling, and wait up to `timeout` seconds for a fetch already
+        under way to finish.
+        """
         self._stop_event.set()
+        if self._thread.is_alive():
+            self._thread.join(timeout)
 
     def snapshot(self) -> Snapshot:
         now = time.monotonic()
@@ -227,7 +253,8 @@ class Poller:
                 status_age=now - self._status_at
                 if self._status_at
                 else float("inf"),
-                error=self._error,
+                arrivals_error=self._arrivals_error,
+                status_error=self._status_error,
             )
 
     def _run(self) -> None:
@@ -236,11 +263,15 @@ class Poller:
         while not self._stop_event.is_set():
             now = time.monotonic()
             if now >= next_arrivals:
-                next_arrivals = now + self._arrivals_every
                 self._fetch_arrivals()
+                next_arrivals = now + backoff(
+                    self._arrivals_every, self._arrivals_failures
+                )
             if now >= next_status:
-                next_status = now + self._status_every
                 self._fetch_status()
+                next_status = now + backoff(
+                    self._status_every, self._status_failures
+                )
             self._stop_event.wait(0.5)
 
     def _fetch_arrivals(self) -> None:
@@ -248,21 +279,25 @@ class Poller:
             departures = self._client.arrivals(self._stop_id)
         except requests.RequestException as exc:
             with self._lock:
-                self._error = str(exc)
+                self._arrivals_error = str(exc)
+                self._arrivals_failures += 1
             return
         with self._lock:
             self._departures = departures
             self._arrivals_at = time.monotonic()
-            self._error = None
+            self._arrivals_error = None
+            self._arrivals_failures = 0
 
     def _fetch_status(self) -> None:
         try:
             statuses = self._client.line_status(self._status_modes)
         except requests.RequestException as exc:
             with self._lock:
-                self._error = str(exc)
+                self._status_error = str(exc)
+                self._status_failures += 1
             return
         with self._lock:
             self._statuses = statuses
             self._status_at = time.monotonic()
-            self._error = None
+            self._status_error = None
+            self._status_failures = 0

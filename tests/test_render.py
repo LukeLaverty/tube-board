@@ -99,7 +99,7 @@ def departures_stale(fonts):
 def departures_mixed_lines(fonts):
     """More than one line on the board, so the line-name column appears."""
     config = load_config()
-    config["station"]["platforms"] = []
+    config.station.platforms = []
     return _render(DeparturesLayout(fonts, config, ticker=False), MIXED_LINES)
 
 
@@ -159,3 +159,11 @@ def test_matches_golden(case, fonts):
     raise AssertionError(
         f"{differing} pixels differ from {path.name}, within {box}"
     )
+
+
+def test_the_ticker_is_rendered_once_and_reused(fonts):
+    layout = DeparturesLayout(fonts, load_config(), ticker=True)
+    _render(layout, mock_snapshot())
+    strip = layout._ticker_strip
+    _render(layout, mock_snapshot())
+    assert layout._ticker_strip is strip

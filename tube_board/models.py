@@ -56,7 +56,9 @@ class Snapshot:
     statuses: list[LineStatus] = field(default_factory=list)
     arrivals_age: float = float("inf")
     status_age: float = float("inf")
-    error: str | None = None
+    # Each feed's latest failure, or None while it is healthy.
+    arrivals_error: str | None = None
+    status_error: str | None = None
 
 
 # Official TfL line colours.
